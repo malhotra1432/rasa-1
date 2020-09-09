@@ -44,8 +44,16 @@ The following are available as attributes of a `Tracker` object:
 
 For example, using the informaton in the tracker, you could
 
+<<<<<<< HEAD
 - Get the value of a slot from the `slots` field and query a database according to it's value
 - Validate a slot value during an active [form](forms.mdx)
+=======
+  * **tracker** – the state tracker for the current
+    user. You can access slot values using
+    `tracker.get_slot(slot_name)`, the most recent user message
+    is `tracker.latest_message.get('text')` and any other
+    `rasa_sdk.Tracker` property.
+>>>>>>> master
 
 ## Output from Custom Actions
 

@@ -7,6 +7,7 @@ import typing
 from pathlib import Path
 from typing import Text, Tuple, Union, Optional, List, Dict, NamedTuple
 
+import rasa.shared.utils.io
 import rasa.utils.io
 from rasa.cli.utils import print_success, create_output_path
 from rasa.constants import (
@@ -276,9 +277,6 @@ async def model_fingerprint(file_importer: "TrainingDataImporter") -> Fingerprin
         The fingerprint.
 
     """
-    from rasa.core.domain import Domain
-
-    import rasa
     import time
 
     config = await file_importer.get_config()
@@ -286,9 +284,11 @@ async def model_fingerprint(file_importer: "TrainingDataImporter") -> Fingerprin
     stories = await file_importer.get_stories()
     nlu_data = await file_importer.get_nlu_data()
 
-    domain_dict = domain.as_dict()
-    responses = domain_dict.pop("responses")
-    domain_without_nlg = Domain.from_dict(domain_dict)
+    responses = domain.templates
+
+    # don't include the response texts in the fingerprint.
+    # Their fingerprint is separate.
+    domain.templates = []
 
     return {
         FINGERPRINT_CONFIG_KEY: _get_hash_of_config(config, exclude_keys=CONFIG_KEYS),
@@ -298,7 +298,7 @@ async def model_fingerprint(file_importer: "TrainingDataImporter") -> Fingerprin
         FINGERPRINT_CONFIG_NLU_KEY: _get_hash_of_config(
             config, include_keys=CONFIG_KEYS_NLU
         ),
-        FINGERPRINT_DOMAIN_WITHOUT_NLG_KEY: hash(domain_without_nlg),
+        FINGERPRINT_DOMAIN_WITHOUT_NLG_KEY: hash(domain),
         FINGERPRINT_NLG_KEY: get_dict_hash(responses),
         FINGERPRINT_NLU_DATA_KEY: hash(nlu_data),
         FINGERPRINT_STORIES_KEY: hash(stories),
@@ -337,7 +337,7 @@ def fingerprint_from_path(model_path: Text) -> Fingerprint:
     fingerprint_path = os.path.join(model_path, FINGERPRINT_FILE_PATH)
 
     if os.path.isfile(fingerprint_path):
-        return rasa.utils.io.read_json_file(fingerprint_path)
+        return rasa.shared.utils.io.read_json_file(fingerprint_path)
     else:
         return {}
 

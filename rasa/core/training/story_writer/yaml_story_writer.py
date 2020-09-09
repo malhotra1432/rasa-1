@@ -1,18 +1,14 @@
 from collections import OrderedDict
 from pathlib import Path
-
-from ruamel import yaml
 from typing import Any, Dict, List, Text, Union, Optional
 
+from ruamel import yaml
 from ruamel.yaml.comments import CommentedMap
-from ruamel.yaml.scalarstring import (
-    DoubleQuotedScalarString,
-    LiteralScalarString,
-)
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString, LiteralScalarString
 
-from rasa.utils.common import raise_warning
-
-from rasa.constants import LATEST_TRAINING_DATA_FORMAT_VERSION, DOCS_URL_STORIES
+import rasa.shared.utils.io
+import rasa.utils.io as io_utils
+from rasa.shared.constants import LATEST_TRAINING_DATA_FORMAT_VERSION
 from rasa.core.events import UserUttered, ActionExecuted, SlotSet, ActiveLoop
 from rasa.core.training.story_reader.yaml_story_reader import (
     KEY_STORIES,
@@ -26,10 +22,9 @@ from rasa.core.training.story_reader.yaml_story_reader import (
     KEY_CHECKPOINT_SLOTS,
     KEY_OR,
     KEY_USER_MESSAGE,
+    KEY_ACTIVE_LOOP,
 )
 from rasa.core.training.structures import StoryStep, Checkpoint
-
-import rasa.utils.io as io_utils
 
 
 class YAMLStoryWriter:
@@ -48,7 +43,7 @@ class YAMLStoryWriter:
         return stream.getvalue()
 
     def dump(
-        self, target: Union[Text, Path, yaml.StringIO], story_steps: List[StoryStep],
+        self, target: Union[Text, Path, yaml.StringIO], story_steps: List[StoryStep]
     ) -> None:
         """Writes Story steps into a target file/stream.
 
@@ -58,7 +53,7 @@ class YAMLStoryWriter:
         """
         result = self.stories_to_yaml(story_steps)
 
-        io_utils.write_yaml(result, target, True)
+        rasa.shared.utils.io.write_yaml(result, target, True)
 
     def stories_to_yaml(self, story_steps: List[StoryStep]) -> Dict[Text, Any]:
         """Converts a sequence of story steps into yaml format.
@@ -66,13 +61,12 @@ class YAMLStoryWriter:
         Args:
             story_steps: Original story steps to be converted to the YAML.
         """
-        from rasa.validator import KEY_TRAINING_DATA_FORMAT_VERSION
+        from rasa.shared.utils.validation import KEY_TRAINING_DATA_FORMAT_VERSION
 
         stories = []
         for story_step in story_steps:
             processed_story_step = self.process_story_step(story_step)
-            if processed_story_step:
-                stories.append(processed_story_step)
+            stories.append(processed_story_step)
 
         result = OrderedDict()
         result[KEY_TRAINING_DATA_FORMAT_VERSION] = DoubleQuotedScalarString(
@@ -82,7 +76,7 @@ class YAMLStoryWriter:
         result[KEY_STORIES] = stories
         return result
 
-    def process_story_step(self, story_step: StoryStep) -> Optional[OrderedDict]:
+    def process_story_step(self, story_step: StoryStep) -> OrderedDict:
         """Converts a single story step into an ordered dict.
 
         Args:
@@ -91,17 +85,6 @@ class YAMLStoryWriter:
         Returns:
             Dict with a story step.
         """
-        if self.story_contains_forms(story_step):
-            raise_warning(
-                f'Training data file contains a story "{story_step.block_name}" '
-                f"that has form(s) in it. This story cannot be converted automatically "
-                f"because of the new Rules system in Rasa Open Source "
-                f"version {LATEST_TRAINING_DATA_FORMAT_VERSION}. "
-                f"Please convert this story manually, it will be skipped now.",
-                docs=DOCS_URL_STORIES,
-            )
-            return None
-
         result = OrderedDict()
         result[KEY_STORY_NAME] = story_step.block_name
         steps = self.process_checkpoints(story_step.start_checkpoints)
@@ -117,6 +100,8 @@ class YAMLStoryWriter:
                 steps.append(self.process_action(event))
             elif isinstance(event, SlotSet):
                 steps.append(self.process_slot(event))
+            elif isinstance(event, ActiveLoop):
+                steps.append(self.process_active_loop(event))
 
         steps.extend(self.process_checkpoints(story_step.end_checkpoints))
 
@@ -125,18 +110,21 @@ class YAMLStoryWriter:
         return result
 
     @staticmethod
-    def story_contains_forms(story_step) -> bool:
-        """Checks if the story step contains form actions.
+    def stories_contain_loops(stories: List[StoryStep]) -> bool:
+        """Checks if the stories contain at least one active loop.
 
         Args:
-            story_step: A single story step.
+            stories: Stories steps.
 
         Returns:
-            `True` if the `story_step` contains at least one form action,
+            `True` if the `stories` contain at least one active loop.
             `False` otherwise.
         """
         return any(
-            [event for event in story_step.events if isinstance(event, ActiveLoop)]
+            [
+                [event for event in story_step.events if isinstance(event, ActiveLoop)]
+                for story_step in stories
+            ]
         )
 
     @staticmethod
@@ -248,3 +236,15 @@ class YAMLStoryWriter:
                 )
             ]
         )
+
+    @staticmethod
+    def process_active_loop(event: ActiveLoop) -> OrderedDict:
+        """Converts ActiveLoop event into an ordered dict.
+
+        Args:
+            event: ActiveLoop event.
+
+        Returns:
+            Converted event.
+        """
+        return OrderedDict([(KEY_ACTIVE_LOOP, event.name)])
